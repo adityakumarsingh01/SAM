@@ -74,7 +74,11 @@ def run(parameters: dict, player=None, session_memory=None) -> str:
             if player:
                 player.write_log("SAM: Resuming music on Spotify...")
             
-            # Bring Spotify to front (optional, but good for context) and press play
+            # Open Spotify to bring it to front
+            os.startfile("spotify:")
+            time.sleep(1.0)
+            
+            # Press media play/pause key
             pyautogui.press('playpause')
             return "I've resumed your music."
             
