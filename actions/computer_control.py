@@ -383,8 +383,8 @@ def computer_control(
       path          : save path for screenshot (must be inside home dir)
 
     Actions:
-      type          — type text at cursor
-      smart_type    — clear field + type (clipboard-backed)
+      type          — type text at cursor (use this for Excel cells)
+      smart_type    — clear field + type (clipboard-backed). WARNING: Set clear_first=False in Excel!
       click         — left click
       double_click  — double left click
       right_click   — right click
@@ -397,7 +397,7 @@ def computer_control(
       paste         — write + paste clipboard
       screenshot    — capture screen (safe path only)
       wait          — sleep N seconds
-      clear_field   — select-all + delete
+      clear_field   — select-all + delete (DANGEROUS IN EXCEL: Deletes entire table!)
       focus_window  — bring window to foreground
       screen_find   — AI element finder (returns x,y)
       screen_click  — AI element finder + click
