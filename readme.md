@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="SAM_image.png" alt="SAM Logo" width="200" />
+  <img src="SAM.png" alt="SAM Logo" width="200" />
   <h1>SAM | Smart Adaptive Mentor</h1>
   <p><strong>The Ultimate Autonomous Cross-Platform AI Assistant</strong></p>
   <p><em>Engineered by Aditya Kumar Singh</em></p>
@@ -22,7 +22,18 @@ This project serves as a comprehensive demonstration of modern AI integration, s
 
 ## 🏗️ System Architecture & Technologies
 
-SAM is built with a focus on modularity, low latency, and infinite extensibility. 
+SAM is built with a focus on modularity, low latency, and infinite extensibility.
+
+### 🛠️ Tech Stack
+<div align="left">
+  <img src="https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python" />
+  <img src="https://img.shields.io/badge/Google_Gemini-4285F4?style=for-the-badge&logo=google&logoColor=white" alt="Google Gemini" />
+  <img src="https://img.shields.io/badge/PyQt6-41CD52?style=for-the-badge&logo=qt&logoColor=white" alt="PyQt6" />
+  <img src="https://img.shields.io/badge/PyAutoGUI-FF6F00?style=for-the-badge&logo=python&logoColor=white" alt="PyAutoGUI" />
+  <img src="https://img.shields.io/badge/Win32_COM-0078D6?style=for-the-badge&logo=windows&logoColor=white" alt="Win32 COM" />
+  <img src="https://img.shields.io/badge/DuckDuckGo-DE5833?style=for-the-badge&logo=duckduckgo&logoColor=white" alt="DuckDuckGo" />
+</div>
+<br />
 
 - **Core Intelligence**: Google Gemini Live API (for real-time, low-latency multi-modal processing).
 - **Frontend / HUD**: PyQt6 (providing a dynamic, hardware-accelerated Heads-Up Display with real-time waveform rendering).
