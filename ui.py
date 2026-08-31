@@ -536,6 +536,40 @@ class HudCanvas(QWidget):
                 Qt.TransformationMode.SmoothTransformation,
             )
             p.drawPixmap(int(cx - fsz / 2), int(cy - fsz / 2), scaled)
+            
+            # --- Sci-Fi Text Styling ---
+            alpha = min(255, max(120, int(self._halo * 2)))
+            
+            # 1. "S  A  M" (Large, glowing cyan/light blue)
+            p.setPen(QPen(QColor(100, 200, 255, alpha)))
+            font = QFont("Segoe UI", 36, QFont.Weight.Light)
+            font.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, 15)
+            p.setFont(font)
+            p.drawText(QRectF(cx - 200, cy + fsz / 2 - 10, 400, 50), Qt.AlignmentFlag.AlignCenter, "S A M")
+            
+            # 2. "SMART ADAPTIVE MENTOR" (Small, white, wide spacing)
+            p.setPen(QPen(QColor(220, 220, 220, alpha)))
+            font2 = QFont("Segoe UI", 8, QFont.Weight.Normal)
+            font2.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, 6)
+            p.setFont(font2)
+            p.drawText(QRectF(cx - 200, cy + fsz / 2 + 45, 400, 20), Qt.AlignmentFlag.AlignCenter, "SMART ADAPTIVE MENTOR")
+            
+            # 3. Glowing cyan line with center dot
+            line_y = cy + fsz / 2 + 70
+            p.setPen(QPen(QColor(50, 150, 255, int(alpha * 0.7)), 1.5))
+            p.drawLine(int(cx - 120), int(line_y), int(cx + 120), int(line_y))
+            # Center glow dot
+            p.setBrush(QBrush(QColor(150, 220, 255, alpha)))
+            p.setPen(Qt.PenStyle.NoPen)
+            p.drawEllipse(QPointF(cx, line_y), 3, 3)
+            
+            # 4. "YOUR AI ASSISTANT" (Small, cyan, wide spacing)
+            p.setPen(QPen(QColor(50, 150, 255, alpha)))
+            font3 = QFont("Segoe UI", 7, QFont.Weight.Bold)
+            font3.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, 5)
+            p.setFont(font3)
+            p.drawText(QRectF(cx - 200, cy + fsz / 2 + 80, 400, 20), Qt.AlignmentFlag.AlignCenter, "YOUR AI ASSISTANT")
+            
         else:
             orb_r = int(fw * 0.27 * self._scale)
             oc    = (200, 0, 50) if self.muted else (0, 60, 110)

@@ -1609,7 +1609,9 @@ class SamLive:
             await asyncio.sleep(delay)
 
 def main():
-    ui = SamUI("SAM.png")
+    import os
+    img_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "SAM.png")
+    ui = SamUI(img_path)
 
     def runner():
         ui.wait_for_api_key()
