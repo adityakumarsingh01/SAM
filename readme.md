@@ -1,6 +1,6 @@
 <div align="center">
-  <img src="SAM.png" alt="SAM Logo" width="200" />
-  <h1>SAM (Smart Adaptive Mentor)</h1>
+  <img src="SAM_image.png" alt="SAM Logo" width="200" />
+  <h1>SAM | Smart Adaptive Mentor</h1>
   <p><strong>The Ultimate Autonomous Cross-Platform AI Assistant</strong></p>
   <p><em>Engineered by Aditya Kumar Singh</em></p>
   
