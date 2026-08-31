@@ -20,7 +20,7 @@ else:
 
 from PyQt6.QtCore import (
     QEasingCurve, QMimeData, QObject, QPointF, QRectF, QSize, Qt,
-    QTimer, QUrl, pyqtSignal, QPropertyAnimation, QPoint
+    QTimer, QUrl, pyqtSignal, QPropertyAnimation, QPoint, QEvent
 )
 from PyQt6.QtGui import (
     QBrush, QColor, QConicalGradient, QDragEnterEvent, QDropEvent, QFont,
@@ -1914,6 +1914,104 @@ class HoverTitleBar(QWidget):
         layout.addWidget(self.rest_btn)
         layout.addWidget(self.close_btn)
 
+class FloatingChatHead(QWidget):
+    command_submitted = pyqtSignal(str)
+
+    def __init__(self, face_path: str, parent=None):
+        super().__init__(None)
+        self.setWindowFlags(
+            Qt.WindowType.FramelessWindowHint | 
+            Qt.WindowType.WindowStaysOnTopHint | 
+            Qt.WindowType.Tool
+        )
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        
+        self.setFixedSize(60, 60)
+        self._expanded = False
+        
+        self.layout = QHBoxLayout(self)
+        self.layout.setContentsMargins(0, 0, 0, 0)
+        self.layout.setSpacing(10)
+        
+        self.icon_label = QLabel()
+        self.icon_label.setFixedSize(60, 60)
+        
+        try:
+            from PIL import Image, ImageDraw
+            import io
+            img = Image.open(face_path).convert("RGBA")
+            sz = min(img.size)
+            img = img.resize((sz, sz), Image.LANCZOS)
+            mk = Image.new("L", (sz, sz), 0)
+            ImageDraw.Draw(mk).ellipse((2, 2, sz - 2, sz - 2), fill=255)
+            img.putalpha(mk)
+            buf = io.BytesIO()
+            img.save(buf, format="PNG")
+            px = QPixmap()
+            px.loadFromData(buf.getvalue())
+            self.icon_label.setPixmap(px.scaled(60, 60, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
+        except Exception:
+            self.icon_label.setText("SAM")
+            self.icon_label.setStyleSheet(f"background: {C.PRI}; color: white; border-radius: 30px; font-weight: bold;")
+            self.icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            
+        self.layout.addWidget(self.icon_label)
+        
+        self.input_field = QLineEdit()
+        self.input_field.setPlaceholderText("Command SAM...")
+        self.input_field.setFont(QFont("Courier New", 10))
+        self.input_field.setFixedHeight(40)
+        self.input_field.setStyleSheet(f"""
+            QLineEdit {{
+                background: #000d14; color: {C.WHITE};
+                border: 1px solid {C.BORDER}; border-radius: 20px; padding: 5px 15px;
+            }}
+            QLineEdit:focus {{ border: 1px solid {C.PRI}; }}
+        """)
+        self.input_field.hide()
+        self.input_field.returnPressed.connect(self._on_enter)
+        
+        self.layout.addWidget(self.input_field)
+        
+        self._dragging = False
+        self._drag_pos = None
+
+    def _on_enter(self):
+        text = self.input_field.text().strip()
+        if text:
+            self.command_submitted.emit(text)
+            self.input_field.clear()
+            self._toggle_expand()
+
+    def _toggle_expand(self):
+        if self._expanded:
+            self.input_field.hide()
+            self.setFixedSize(60, 60)
+            self._expanded = False
+        else:
+            self.setFixedSize(350, 60)
+            self.input_field.show()
+            self.input_field.setFocus()
+            self._expanded = True
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._dragging = True
+            self._drag_pos = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
+            event.accept()
+
+    def mouseMoveEvent(self, event):
+        if self._dragging:
+            self.move(event.globalPosition().toPoint() - self._drag_pos)
+            event.accept()
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._dragging = False
+            # To distinguish drag from click, we just toggle.
+            self._toggle_expand()
+            event.accept()
+
 class MainWindow(QMainWindow):
     _log_sig        = pyqtSignal(str)
     _state_sig      = pyqtSignal(str)
@@ -1956,6 +2054,10 @@ class MainWindow(QMainWindow):
         self._current_file: str | None = None
         self._remote_overlay: RemoteKeyOverlay | None = None
         self._customize_overlay: CustomizeOverlay | None = None
+
+        self._chat_head = FloatingChatHead(self._face_path)
+        self._chat_head.command_submitted.connect(self._on_chat_head_submitted)
+        self._chat_head.hide()
 
         central = QWidget()
         central.setStyleSheet(f"background: {C.BG};")
@@ -2645,7 +2747,26 @@ class MainWindow(QMainWindow):
             self._proc_lbl.setText(f"PROC  {proc_count}")
         except Exception:
             self._proc_lbl.setText("PROC  --")
+    def _on_chat_head_submitted(self, text: str):
+        if self.on_text_command:
+            self._log_sig.emit(f"User (Mini): {text}")
+            self.on_text_command(text)
 
+    def changeEvent(self, event):
+        if event.type() == QEvent.Type.ActivationChange:
+            if not self.isActiveWindow():
+                if not self.isHidden():
+                    screen = QApplication.primaryScreen().availableGeometry()
+                    self._chat_head.move(screen.width() - 120, 120)
+                    self._chat_head.show()
+            else:
+                self._chat_head.hide()
+        elif event.type() == QEvent.Type.WindowStateChange:
+            if self.isMinimized():
+                screen = QApplication.primaryScreen().availableGeometry()
+                self._chat_head.move(screen.width() - 120, 120)
+                self._chat_head.show()
+        super().changeEvent(event)
 
     def _build_header(self) -> QWidget:
         w = QWidget()
