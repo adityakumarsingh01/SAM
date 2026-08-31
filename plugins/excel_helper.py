@@ -13,35 +13,34 @@ PLUGIN = {
     "name": "excel_helper",
     "description": (
         "Use this tool to interact directly with the active Microsoft Excel application. "
-        "You can read whole tables to see formulas and values, write data to specific cells, "
-        "format cells (colors, bold), clear ranges, and get sheet info. "
-        "ALWAYS use this tool instead of computer_control when interacting with Excel. "
-        "CRITICAL: When fixing a table, ONLY modify the cells that are broken or causing errors (like text instead of numbers). "
-        "DO NOT change the values of valid cells or guess new data. "
-        "CRITICAL 2: If fixing multiple cells, DO NOT call write_range multiple times! "
-        "Pass a 2D JSON array to 'write_range' (e.g. for A1:B2) to fix everything in a single, lightning-fast batch update."
+        "You can read whole tables, write data, format cells, clear ranges, and get sheet info. "
+        "CRITICAL: When fixing a table, ONLY modify the exact cells that are broken. Do NOT change valid cells. "
+        "CRITICAL 2: If fixing multiple scattered cells, use the 'batch_update' action! "
+        "For 'batch_update', pass a JSON array of objects in 'value' (e.g. '[{\"cell\": \"C2\", \"value\": 25}, {\"cell\": \"B5\", \"value\": 2}]'). "
+        "This is the ONLY correct way to fix multiple non-contiguous errors in one step."
     ),
     "parameters": {
         "type": "OBJECT",
         "properties": {
             "action": {
                 "type": "STRING", 
-                "description": "The action to perform: 'read_range', 'write_range', 'format_cell', 'clear_range', or 'get_active_sheet_info'."
+                "description": "The action to perform: 'read_range', 'write_range', 'batch_update', 'format_cell', 'clear_range', or 'get_active_sheet_info'."
             },
             "cell": {
                 "type": "STRING", 
-                "description": "The cell reference or range, e.g., 'B3', 'D4', 'A1:C5'. Not required for 'get_active_sheet_info'."
+                "description": "The cell reference or range, e.g., 'B3'. Not required for 'get_active_sheet_info' or 'batch_update'."
             },
             "value": {
                 "type": "STRING", 
                 "description": (
-                    "For 'write_range': The value to write. To write multiple rows/columns, provide a JSON string of a 2D array (e.g. '[[\"A\",\"B\"], [1, 2]]'). "
-                    "For 'format_cell': Provide a JSON object with optional keys: 'bold' (bool), 'italic' (bool), 'color' (hex string like '#FF0000')."
+                    "For 'write_range': The value to write (or 2D JSON array for contiguous block). "
+                    "For 'batch_update': A JSON array of cell/value objects. "
+                    "For 'format_cell': A JSON object like {\"bold\": true, \"color\": \"#FF0000\"}."
                 )
             },
             "read_formulas": {
                 "type": "BOOLEAN",
-                "description": "If True and action is 'read_range', reads the formulas instead of the computed values."
+                "description": "If True and action is 'read_range', reads formulas instead of values."
             }
         },
         "required": ["action"],
@@ -131,6 +130,22 @@ def run(parameters: dict, player=None, session_memory=None) -> str:
                 else:
                     target_range.Value = parsed_val
                 return f"Successfully wrote '{parsed_val}' to cell {cell}."
+                
+        elif action == "batch_update":
+            if player:
+                player.write_log("SAM: Performing batch update in Excel...")
+            updates = _parse_value(value_str)
+            if not isinstance(updates, list):
+                return "Error: 'value' must be a JSON array of objects for 'batch_update'."
+            for update in updates:
+                c = update.get("cell")
+                v = update.get("value")
+                r = sheet.Range(c)
+                if isinstance(v, str) and v.startswith("="):
+                    r.Formula = v
+                else:
+                    r.Value = v
+            return f"Successfully processed {len(updates)} scattered cell updates."
                 
         elif action == "read_range":
             if player:
