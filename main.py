@@ -1014,13 +1014,13 @@ class SamLive:
 
                         if sc.output_transcription and sc.output_transcription.text:
                             txt = _clean_transcript(sc.output_transcription.text)
-                            if txt and txt != (out_buf[-1] if out_buf else ""):
-                                out_buf.append(txt)
+                            if txt:
+                                out_buf = [txt]
 
                         if sc.input_transcription and sc.input_transcription.text:
                             txt = _clean_transcript(sc.input_transcription.text)
                             if txt:
-                                in_buf.append(txt)
+                                in_buf = [txt]
                                 self._last_user_speech = time.monotonic()
 
                         if sc.turn_complete:
@@ -1487,6 +1487,8 @@ class SamLive:
 
         while True:
             try:
+                import concurrent.futures
+                self._loop.set_default_executor(concurrent.futures.ThreadPoolExecutor())
                 print("[SAM] Connecting...")
                 self.ui.set_state("THINKING")
                 config = self._build_config()

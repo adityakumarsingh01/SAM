@@ -23,13 +23,17 @@ def _get_api_key() -> str:
         return json.load(f)["gemini_api_key"]
 
 
+_client_instance = None
+
 def _get_gemini(model: str = GEMINI_MODEL):
-    from google import genai
-    _c = genai.Client(api_key=_get_api_key())
+    global _client_instance
+    if _client_instance is None:
+        from google import genai
+        _client_instance = genai.Client(api_key=_get_api_key())
 
     class _W:
         def generate_content(self, contents):
-            return _c.models.generate_content(model=model, contents=contents)
+            return _client_instance.models.generate_content(model=model, contents=contents)
 
     return _W()
 
@@ -459,7 +463,10 @@ def _screen_debug_action(description, file_path, player, speak=None) -> str:
         from google import genai
         from google.genai import types
 
-        client = genai.Client(api_key=_get_api_key())
+        global _client_instance
+        if _client_instance is None:
+            _client_instance = genai.Client(api_key=_get_api_key())
+        client = _client_instance
 
         image_bytes  = screenshot_path.read_bytes()
         image_base64 = _image_to_base64(screenshot_path)

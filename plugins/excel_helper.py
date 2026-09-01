@@ -17,14 +17,16 @@ PLUGIN = {
         "CRITICAL: When fixing a table, ONLY modify the exact cells that are broken. Do NOT change valid cells. "
         "CRITICAL 2: If fixing multiple scattered cells, use the 'batch_update' action! "
         "For 'batch_update', pass a JSON array of objects in 'value' (e.g. '[{\"cell\": \"C2\", \"value\": 25}, {\"cell\": \"B5\", \"value\": 2}]'). "
-        "This is the ONLY correct way to fix multiple non-contiguous errors in one step."
+        "This is the ONLY correct way to fix multiple non-contiguous errors in one step. "
+        "For 'analyze_data', pass a JSON object in 'value' (e.g. '{\"group_by\": \"Product\", \"sum\": \"Revenue\"}') to aggregate totals. "
+        "For 'highlight_rows', pass a JSON object in 'value' (e.g. '{\"column\": \"Product\", \"match\": \"Smartphone\", \"format\": {\"bold\": true, \"color\": \"#FFFF00\"}}')."
     ),
     "parameters": {
         "type": "OBJECT",
         "properties": {
             "action": {
                 "type": "STRING", 
-                "description": "The action to perform: 'read_range', 'write_range', 'batch_update', 'format_cell', 'clear_range', or 'get_active_sheet_info'."
+                "description": "The action to perform: 'read_range', 'write_range', 'batch_update', 'format_cell', 'clear_range', 'analyze_data', 'highlight_rows', or 'get_active_sheet_info'."
             },
             "cell": {
                 "type": "STRING", 
@@ -84,7 +86,7 @@ def run(parameters: dict, player=None, session_memory=None) -> str:
     value_str = parameters.get("value", "")
     read_formulas = parameters.get("read_formulas", False)
     
-    if action != "get_active_sheet_info" and not cell:
+    if action not in ("get_active_sheet_info", "batch_update", "analyze_data", "highlight_rows") and not cell:
         return "Error: 'cell' is required for this action."
 
     try:
@@ -101,7 +103,9 @@ def run(parameters: dict, player=None, session_memory=None) -> str:
             address = used_range.Address
             return f"Active Sheet: '{sheet.Name}'. Used range: {address.replace('$', '')}"
 
-        target_range = sheet.Range(cell)
+        target_range = None
+        if cell:
+            target_range = sheet.Range(cell)
         
         if action == "write_range":
             if player:
@@ -167,6 +171,95 @@ def run(parameters: dict, player=None, session_memory=None) -> str:
             else:
                 return f"Value in {cell}: {val}"
                 
+        elif action == "analyze_data":
+            if player:
+                player.write_log(f"SAM: Analyzing Excel data...")
+            try:
+                params = json.loads(value_str)
+                group_col_name = params.get("group_by")
+                sum_col_name = params.get("sum")
+                
+                used_range = sheet.UsedRange.Value
+                if not used_range or len(used_range) < 2:
+                    return "Error: Not enough data."
+                
+                headers = [str(h).strip() for h in used_range[0]]
+                if group_col_name not in headers or sum_col_name not in headers:
+                    return f"Error: Columns '{group_col_name}' or '{sum_col_name}' not found. Available: {headers}"
+                
+                g_idx = headers.index(group_col_name)
+                s_idx = headers.index(sum_col_name)
+                
+                results = {}
+                for row in used_range[1:]:
+                    if len(row) > max(g_idx, s_idx):
+                        key = str(row[g_idx]).strip()
+                        val = row[s_idx]
+                        if not key or key == 'None': continue
+                        try:
+                            val = float(val)
+                        except (ValueError, TypeError):
+                            continue
+                        results[key] = results.get(key, 0.0) + val
+                
+                sorted_results = sorted(results.items(), key=lambda x: x[1], reverse=True)
+                
+                md = f"| {group_col_name} | Total {sum_col_name} |\n| --- | ---: |\n"
+                for k, v in sorted_results:
+                    md += f"| {k} | {v:,.0f} |\n"
+                
+                if sorted_results:
+                    best = sorted_results[0]
+                    md += f"\n🏆 Highest: {best[0]} ({best[1]:,.0f})"
+                
+                return f"Analysis Complete. Show this to the user:\n{md}"
+            except Exception as e:
+                return f"Error in analyze_data: {str(e)}"
+                
+        elif action == "highlight_rows":
+            if player:
+                player.write_log("SAM: Highlighting rows...")
+            try:
+                params = json.loads(value_str)
+                column_name = params.get("column")
+                match_text = str(params.get("match")).lower()
+                fmt = params.get("format", {})
+                
+                used_range = sheet.UsedRange.Value
+                if not used_range or len(used_range) < 2:
+                    return "Error: Not enough data."
+                
+                headers = [str(h).strip() for h in used_range[0]]
+                if column_name not in headers:
+                    return f"Error: Column '{column_name}' not found. Available: {headers}"
+                
+                col_idx = headers.index(column_name)
+                total_cols = len(headers)
+                
+                rows_to_highlight = []
+                for i, row in enumerate(used_range[1:]):
+                    if len(row) > col_idx:
+                        val = str(row[col_idx]).lower()
+                        if match_text in val:
+                            rows_to_highlight.append(i + 2) # +1 for 0-index, +1 for header
+                
+                if not rows_to_highlight:
+                    return f"No rows found matching '{match_text}'."
+                
+                for row_num in rows_to_highlight:
+                    r = sheet.Range(sheet.Cells(row_num, 1), sheet.Cells(row_num, total_cols))
+                    if "bold" in fmt:
+                        r.Font.Bold = fmt["bold"]
+                    if "color" in fmt:
+                        hex_color = fmt["color"].lstrip('#')
+                        if len(hex_color) == 6:
+                            red, g, b = tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
+                            r.Interior.Color = b * 65536 + g * 256 + red
+                            
+                return f"Successfully highlighted {len(rows_to_highlight)} rows matching '{match_text}'."
+            except Exception as e:
+                return f"Error in highlight_rows: {str(e)}"
+
         elif action == "clear_range":
             if player:
                 player.write_log(f"SAM: Clearing Excel {cell}...")

@@ -1915,7 +1915,8 @@ class HoverTitleBar(QWidget):
         layout.addWidget(self.close_btn)
 
 class FloatingChatHead(QWidget):
-    command_submitted = pyqtSignal(str)
+    clicked = pyqtSignal()
+    moved = pyqtSignal(QPoint)
 
     def __init__(self, face_path: str, parent=None):
         super().__init__(None)
@@ -1927,11 +1928,10 @@ class FloatingChatHead(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         
         self.setFixedSize(60, 60)
-        self._expanded = False
         
         self.layout = QHBoxLayout(self)
         self.layout.setContentsMargins(0, 0, 0, 0)
-        self.layout.setSpacing(10)
+        self.layout.setSpacing(0)
         
         self.icon_label = QLabel()
         self.icon_label.setFixedSize(60, 60)
@@ -1957,59 +1957,31 @@ class FloatingChatHead(QWidget):
             
         self.layout.addWidget(self.icon_label)
         
-        self.input_field = QLineEdit()
-        self.input_field.setPlaceholderText("Command SAM...")
-        self.input_field.setFont(QFont("Courier New", 10))
-        self.input_field.setFixedHeight(40)
-        self.input_field.setStyleSheet(f"""
-            QLineEdit {{
-                background: #000d14; color: {C.WHITE};
-                border: 1px solid {C.BORDER}; border-radius: 20px; padding: 5px 15px;
-            }}
-            QLineEdit:focus {{ border: 1px solid {C.PRI}; }}
-        """)
-        self.input_field.hide()
-        self.input_field.returnPressed.connect(self._on_enter)
-        
-        self.layout.addWidget(self.input_field)
-        
         self._dragging = False
         self._drag_pos = None
-
-    def _on_enter(self):
-        text = self.input_field.text().strip()
-        if text:
-            self.command_submitted.emit(text)
-            self.input_field.clear()
-            self._toggle_expand()
-
-    def _toggle_expand(self):
-        if self._expanded:
-            self.input_field.hide()
-            self.setFixedSize(60, 60)
-            self._expanded = False
-        else:
-            self.setFixedSize(350, 60)
-            self.input_field.show()
-            self.input_field.setFocus()
-            self._expanded = True
+        self._drag_start_pos = None
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
             self._dragging = True
+            self._drag_start_pos = event.globalPosition().toPoint()
             self._drag_pos = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
             event.accept()
 
     def mouseMoveEvent(self, event):
         if self._dragging:
             self.move(event.globalPosition().toPoint() - self._drag_pos)
+            self.moved.emit(self.pos())
             event.accept()
 
     def mouseReleaseEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
             self._dragging = False
-            # To distinguish drag from click, we just toggle.
-            self._toggle_expand()
+            if self._drag_start_pos is not None:
+                diff = event.globalPosition().toPoint() - self._drag_start_pos
+                if diff.manhattanLength() < 5:
+                    self.clicked.emit()
+            self._drag_start_pos = None
             event.accept()
 
 class MainWindow(QMainWindow):
@@ -2056,7 +2028,8 @@ class MainWindow(QMainWindow):
         self._customize_overlay: CustomizeOverlay | None = None
 
         self._chat_head = FloatingChatHead(self._face_path)
-        self._chat_head.command_submitted.connect(self._on_chat_head_submitted)
+        self._chat_head.clicked.connect(self._on_chat_head_clicked)
+        self._chat_head.moved.connect(self._on_chat_head_moved)
         self._chat_head.hide()
 
         central = QWidget()
@@ -2170,7 +2143,12 @@ class MainWindow(QMainWindow):
         self._metric_tmr.start(2000)
         self._update_metrics()
 
+        self._chatbox = FloatingChatBox()
+        self._chatbox.moved.connect(self._on_chatbox_moved)
+        self._chatbox.command_submitted.connect(self._on_chatbox_submitted)
+
         self._log_sig.connect(self._log.append_log)
+        self._log_sig.connect(self._chatbox.show_text)
         self._state_sig.connect(self._apply_state)
         self._content_sig.connect(self._show_content)
         self._reconfig_sig.connect(self._show_setup)
@@ -2747,10 +2725,27 @@ class MainWindow(QMainWindow):
             self._proc_lbl.setText(f"PROC  {proc_count}")
         except Exception:
             self._proc_lbl.setText("PROC  --")
-    def _on_chat_head_submitted(self, text: str):
+    def _on_chatbox_submitted(self, text: str):
         if self.on_text_command:
-            self._log_sig.emit(f"User (Mini): {text}")
             self.on_text_command(text)
+
+    def _on_chat_head_clicked(self):
+        if self._chatbox.isVisible():
+            self._chatbox.hide()
+        else:
+            self._chatbox.show()
+            self._chatbox.input_field.setFocus()
+            self._on_chat_head_moved(self._chat_head.pos())
+
+    def _on_chat_head_moved(self, pos: QPoint):
+        if self._chatbox.isVisible():
+            chat_w = self._chatbox.width()
+            self._chatbox.move(pos.x() - chat_w - 10, pos.y())
+
+    def _on_chatbox_moved(self, pos: QPoint):
+        if self._chat_head.isVisible():
+            chat_w = self._chatbox.width()
+            self._chat_head.move(pos.x() + chat_w + 10, pos.y())
 
     def changeEvent(self, event):
         if event.type() == QEvent.Type.ActivationChange:
@@ -3623,6 +3618,192 @@ class _RootShim:
     def protocol(self, *_):
         pass
 
+
+class ChatBubble(QFrame):
+    def __init__(self, text: str, is_user: bool, is_sys: bool = False, parent=None):
+        super().__init__(parent)
+        self.layout = QHBoxLayout(self)
+        self.layout.setContentsMargins(0, 0, 0, 0)
+        
+        self.label = QLabel(text)
+        self.label.setWordWrap(True)
+        self.label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        
+        if is_sys:
+            self.label.setStyleSheet(f"color: {C.TEXT_DIM}; font-size: 12px; font-style: italic; padding: 5px;")
+            self.label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            self.layout.addWidget(self.label)
+        elif is_user:
+            self.label.setStyleSheet(f"""
+                QLabel {{
+                    background-color: #333333;
+                    color: {C.WHITE};
+                    border-radius: 12px;
+                    padding: 8px 12px;
+                    font-size: 15px;
+                }}
+            """)
+            self.layout.addStretch(1)
+            self.layout.addWidget(self.label, 4)
+        else:
+            self.label.setStyleSheet(f"""
+                QLabel {{
+                    background-color: {C.PRI_DIM};
+                    color: {C.WHITE};
+                    border-radius: 12px;
+                    padding: 8px 12px;
+                    font-size: 15px;
+                }}
+            """)
+            self.layout.addWidget(self.label, 4)
+            self.layout.addStretch(1)
+
+class FloatingChatBox(QWidget):
+    moved = pyqtSignal(QPoint)
+    command_submitted = pyqtSignal(str)
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowFlags(
+            Qt.WindowType.Window | 
+            Qt.WindowType.FramelessWindowHint | 
+            Qt.WindowType.WindowStaysOnTopHint | 
+            Qt.WindowType.Tool
+        )
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.resize(360, 500)
+        
+        self.main_layout = QVBoxLayout(self)
+        self.main_layout.setContentsMargins(0, 0, 0, 0)
+        
+        self.bg_frame = QFrame(self)
+        self.bg_frame.setStyleSheet(f"""
+            QFrame {{
+                background-color: rgba(15, 20, 25, 230);
+                border: 1px solid {C.BORDER};
+                border-radius: 12px;
+            }}
+        """)
+        self.bg_layout = QVBoxLayout(self.bg_frame)
+        self.bg_layout.setContentsMargins(8, 8, 8, 8)
+        
+        self.header = QFrame()
+        self.header.setStyleSheet("border: none; background: transparent;")
+        self.header.setFixedHeight(28)
+        h_layout = QHBoxLayout(self.header)
+        h_layout.setContentsMargins(5, 0, 5, 0)
+        
+        title = QLabel("SAM Chat")
+        title.setStyleSheet(f"color: {C.TEXT_DIM}; font-weight: bold; font-size: 13px;")
+        h_layout.addWidget(title)
+        h_layout.addStretch()
+        
+        close_btn = QPushButton("✕")
+        close_btn.setFixedSize(22, 22)
+        close_btn.setStyleSheet(f"""
+            QPushButton {{ background: transparent; color: {C.TEXT_DIM}; border: none; font-size: 16px; font-weight: bold; }}
+            QPushButton:hover {{ color: {C.RED}; }}
+        """)
+        close_btn.clicked.connect(self.hide)
+        h_layout.addWidget(close_btn)
+        
+        self.bg_layout.addWidget(self.header)
+        
+        self.scroll = QScrollArea()
+        self.scroll.setWidgetResizable(True)
+        self.scroll.setStyleSheet(f"""
+            QScrollArea {{ border: none; background: transparent; }}
+            QScrollBar:vertical {{ width: 6px; background: transparent; }}
+            QScrollBar::handle:vertical {{ background: {C.BORDER}; border-radius: 3px; }}
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0px; }}
+            QWidget#chatContent {{ background: transparent; }}
+        """)
+        
+        self.content_widget = QWidget()
+        self.content_widget.setObjectName("chatContent")
+        self.content_layout = QVBoxLayout(self.content_widget)
+        self.content_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        self.content_layout.setSpacing(10)
+        self.content_layout.setContentsMargins(5, 5, 5, 5)
+        
+        self.scroll.setWidget(self.content_widget)
+        self.bg_layout.addWidget(self.scroll)
+        
+        self.input_field = QLineEdit()
+        self.input_field.setPlaceholderText("Command SAM...")
+        self.input_field.setFont(QFont("Courier New", 10))
+        self.input_field.setFixedHeight(40)
+        self.input_field.setStyleSheet(f"""
+            QLineEdit {{
+                background: #000d14; color: {C.WHITE};
+                border: 1px solid {C.BORDER}; border-radius: 20px; padding: 5px 15px;
+            }}
+            QLineEdit:focus {{ border: 1px solid {C.PRI}; }}
+        """)
+        self.input_field.returnPressed.connect(self._on_enter)
+        self.bg_layout.addWidget(self.input_field)
+        
+        self.main_layout.addWidget(self.bg_frame)
+        
+        self._drag_pos = None
+
+    def _on_enter(self):
+        text = self.input_field.text().strip()
+        if text:
+            self.command_submitted.emit(text)
+            self.input_field.clear()
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._drag_pos = event.globalPosition().toPoint()
+            event.accept()
+
+    def mouseMoveEvent(self, event):
+        if self._drag_pos is not None:
+            delta = event.globalPosition().toPoint() - self._drag_pos
+            self.move(self.pos() + delta)
+            self.moved.emit(self.pos())
+            self._drag_pos = event.globalPosition().toPoint()
+            event.accept()
+
+    def mouseReleaseEvent(self, event):
+        self._drag_pos = None
+        event.accept()
+        
+    def show_text(self, text: str):
+        if not text:
+            return
+            
+        is_user = False
+        is_sys = False
+        
+        if text.startswith("User"):
+            is_user = True
+            if ":" in text:
+                text = text.split(":", 1)[1].strip()
+        elif text.startswith("SAM:"):
+            text = text.split(":", 1)[1].strip()
+        elif text.startswith("SYS:"):
+            is_sys = True
+            text = text.split(":", 1)[1].strip()
+            
+        bubble = ChatBubble(text, is_user, is_sys)
+        self.content_layout.addWidget(bubble)
+        
+        while self.content_layout.count() > 50:
+            item = self.content_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+                
+        QTimer.singleShot(50, lambda: self.scroll.verticalScrollBar().setValue(self.scroll.verticalScrollBar().maximum()))
+        
+        if not self.isVisible():
+            app = QApplication.instance()
+            screen = app.primaryScreen()
+            geom = screen.availableGeometry()
+            x = geom.x() + geom.width() - self.width() - 50
+            y = geom.y() + 50
+            self.move(x, y)
+            self.show()
 
 class SamUI:
     def __init__(self, face_path: str, size=None):
